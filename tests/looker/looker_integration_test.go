@@ -343,6 +343,61 @@ func TestLooker(t *testing.T) {
 				"source":      "my-instance",
 				"description": "Simple tool to test end to end functionality.",
 			},
+			"create_conversation": map[string]any{
+				"type":        "looker-create-conversation",
+				"source":      "my-instance",
+				"description": "Simple tool to test end to end functionality.",
+			},
+			"delete_conversation": map[string]any{
+				"type":        "looker-delete-conversation",
+				"source":      "my-instance",
+				"description": "Simple tool to test end to end functionality.",
+			},
+			"get_conversation": map[string]any{
+				"type":        "looker-get-conversation",
+				"source":      "my-instance",
+				"description": "Simple tool to test end to end functionality.",
+			},
+			"update_conversation": map[string]any{
+				"type":        "looker-update-conversation",
+				"source":      "my-instance",
+				"description": "Simple tool to test end to end functionality.",
+			},
+			"list_conversations": map[string]any{
+				"type":        "looker-list-conversations",
+				"source":      "my-instance",
+				"description": "Simple tool to test end to end functionality.",
+			},
+			"create_conversation_message": map[string]any{
+				"type":        "looker-create-conversation-message",
+				"source":      "my-instance",
+				"description": "Simple tool to test end to end functionality.",
+			},
+			"list_conversation_messages": map[string]any{
+				"type":        "looker-list-conversation-messages",
+				"source":      "my-instance",
+				"description": "Simple tool to test end to end functionality.",
+			},
+			"delete_conversation_message": map[string]any{
+				"type":        "looker-delete-conversation-message",
+				"source":      "my-instance",
+				"description": "Simple tool to test end to end functionality.",
+			},
+			"get_conversation_message": map[string]any{
+				"type":        "looker-get-conversation-message",
+				"source":      "my-instance",
+				"description": "Simple tool to test end to end functionality.",
+			},
+			"update_conversation_message": map[string]any{
+				"type":        "looker-update-conversation-message",
+				"source":      "my-instance",
+				"description": "Simple tool to test end to end functionality.",
+			},
+			"conversational_analytics_chat": map[string]any{
+				"type":        "looker-conversational-analytics-chat",
+				"source":      "my-instance",
+				"description": "Simple tool to test end to end functionality.",
+			},
 		},
 	}
 
@@ -2159,6 +2214,50 @@ func TestLooker(t *testing.T) {
 	wantResult = ""
 	tests.RunToolInvokeParametersTest(t, "delete_agent", []byte(fmt.Sprintf(`{"agent_id": "%s"}`, agentId)), wantResult)
 
+	// Conversations tests
+	wantResult = fmt.Sprintf("conv_%s", randstr)
+	tests.RunToolInvokeParametersTest(t, "create_conversation", []byte(fmt.Sprintf(`{"name": "conv_%s", "sources": [{"model": "system__activity", "explore": "history"}]}`, randstr)), wantResult)
+
+	conversationId, err := findTestConversationId(t, fmt.Sprintf("conv_%s", randstr))
+	if err != nil {
+		t.Fatalf("failed to find test conversation: %v", err)
+	}
+
+	wantResult = fmt.Sprintf("conv_%s", randstr)
+	tests.RunToolInvokeParametersTest(t, "list_conversations", []byte(`{}`), wantResult)
+
+	wantResult = fmt.Sprintf("conv_%s", randstr)
+	tests.RunToolInvokeParametersTest(t, "get_conversation", []byte(fmt.Sprintf(`{"conversation_id": "%s"}`, conversationId)), wantResult)
+
+	wantResult = fmt.Sprintf("conv_%s", randstr)
+	tests.RunToolInvokeParametersTest(t, "update_conversation", []byte(fmt.Sprintf(`{"conversation_id": "%s", "category": "test_category"}`, conversationId)), wantResult)
+
+	// Messages tests
+	wantResult = "Hello from test"
+	tests.RunToolInvokeParametersTest(t, "create_conversation_message", []byte(fmt.Sprintf(`{"conversation_id": "%s", "messages": [{"type": "user", "message": {"text": "Hello from test"}}]}`, conversationId)), wantResult)
+
+	wantResult = "Hello from test"
+	tests.RunToolInvokeParametersTest(t, "list_conversation_messages", []byte(fmt.Sprintf(`{"conversation_id": "%s"}`, conversationId)), wantResult)
+
+	messageId := findTestMessageId(t, conversationId, "Hello from test")
+
+	wantResult = "Hello from test"
+	tests.RunToolInvokeParametersTest(t, "get_conversation_message", []byte(fmt.Sprintf(`{"conversation_id": "%s", "message_id": "%s"}`, conversationId, messageId)), wantResult)
+
+	wantResult = "Updated Hello"
+	tests.RunToolInvokeParametersTest(t, "update_conversation_message", []byte(fmt.Sprintf(`{"conversation_id": "%s", "message_id": "%s", "message": {"text": "Updated Hello"}}`, conversationId, messageId)), wantResult)
+
+	wantResult = ""
+	tests.RunToolInvokeParametersTest(t, "delete_conversation_message", []byte(fmt.Sprintf(`{"conversation_id": "%s", "message_id": "%s"}`, conversationId, messageId)), wantResult)
+
+	// Chat test
+	wantResult = "systemMessage"
+	tests.RunToolInvokeParametersTest(t, "conversational_analytics_chat", []byte(fmt.Sprintf(`{"conversation_id": "%s", "user_message": "Hello"}`, conversationId)), wantResult)
+
+	// Clean up conversation
+	wantResult = ""
+	tests.RunToolInvokeParametersTest(t, "delete_conversation", []byte(fmt.Sprintf(`{"conversation_id": "%s"}`, conversationId)), wantResult)
+
 	runConversationalAnalytics(t, "system__activity", "content_usage")
 
 	deleteLook := testMakeLook(t, randstr)
@@ -2461,4 +2560,35 @@ func testMakeDashboard(t *testing.T, randstr string) (string, func()) {
 
 func stringPtr(s string) *string {
 	return &s
+}
+
+func findTestConversationId(t *testing.T, name string) (string, error) {
+	sdk := newLookerTestSDK(t)
+	reqSearchConversations := v4.RequestSearchConversations{
+		Name: &name,
+	}
+	conversations, err := sdk.SearchConversations(reqSearchConversations, nil)
+	if len(conversations) == 0 {
+		t.Fatalf("Failed to find conversation %s", name)
+	}
+	conversationId := *conversations[0].Id
+	t.Logf("Found Conversation Id %s", conversationId)
+	return conversationId, err
+}
+
+func findTestMessageId(t *testing.T, conversationId string, text string) string {
+	sdk := newLookerTestSDK(t)
+	messages, err := sdk.AllConversationMessages(conversationId, "", nil)
+	if err != nil {
+		t.Fatalf("Failed to get messages: %v", err)
+	}
+	for _, m := range messages {
+		if m.Message != nil {
+			if txt, ok := (*m.Message)["text"].(string); ok && txt == text {
+				return *m.Id
+			}
+		}
+	}
+	t.Fatalf("Failed to find message with text %q in conversation %s", text, conversationId)
+	return ""
 }
