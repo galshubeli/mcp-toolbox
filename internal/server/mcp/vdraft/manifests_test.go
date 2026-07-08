@@ -417,7 +417,7 @@ func TestGenerateToolManifestWithSecureParams(t *testing.T) {
 			},
 		},
 	}
-	got := generateToolManifest("test-tool", "desc", nil, params, nil)
+	got := generateToolManifest("test-tool", "desc", nil, params, nil, nil)
 
 	// Validate standard schema
 	wantStandard := InputSchema{
@@ -486,7 +486,7 @@ func TestGenerateListToolsResultWithSecureParamsFiltering(t *testing.T) {
 	}
 
 	// Case 1: Client does NOT support secure params
-	gotNoSupport, err := GenerateListToolsResult(toolset, toolsMap, false)
+	gotNoSupport, err := GenerateListToolsResult(nil, toolset, toolsMap, nil, false)
 	if err != nil {
 		t.Fatalf("failed GenerateListToolsResult: %s", err)
 	}
@@ -498,7 +498,7 @@ func TestGenerateListToolsResultWithSecureParamsFiltering(t *testing.T) {
 	}
 
 	// Case 2: Client DOES support secure params
-	gotSupport, err := GenerateListToolsResult(toolset, toolsMap, true)
+	gotSupport, err := GenerateListToolsResult(nil, toolset, toolsMap, nil, true)
 	if err != nil {
 		t.Fatalf("failed GenerateListToolsResult: %s", err)
 	}
