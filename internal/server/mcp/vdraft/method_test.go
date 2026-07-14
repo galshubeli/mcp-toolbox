@@ -957,7 +957,7 @@ func TestToolsCallHandlerWithSecureParams(t *testing.T) {
 	}
 
 	toolsets := map[string]tools.Toolset{"test-toolset": toolset}
-	resourceMgr := resources.NewResourceManager(nil, nil, nil, toolsMap, toolsets, nil, nil)
+	primitiveMgr := primitives.NewPrimitiveManager(nil, nil, nil, toolsMap, toolsets, nil, nil)
 
 	tests := []struct {
 		desc        string
@@ -1085,7 +1085,7 @@ func TestToolsCallHandlerWithSecureParams(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			got, err := toolsCallHandler(ctxVersion, dummyID, toolset, resourceMgr, []byte(tt.body), nil)
+			got, err := toolsCallHandler(ctxVersion, dummyID, toolset, primitiveMgr, []byte(tt.body), nil)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got nil")
