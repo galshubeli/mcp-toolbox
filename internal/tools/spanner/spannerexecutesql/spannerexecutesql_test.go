@@ -102,10 +102,9 @@ func TestInitialize_ReadOnlyValidation(t *testing.T) {
 	ptr := func(b bool) *bool { return &b }
 
 	tcs := []struct {
-		desc        string
-		cfg         spannerexecutesql.Config
-		wantErr     bool
-		errContains string
+		desc         string
+		cfg          spannerexecutesql.Config
+		wantReadOnly bool
 	}{
 		{
 			desc: "no conflict - both true",
@@ -114,7 +113,7 @@ func TestInitialize_ReadOnlyValidation(t *testing.T) {
 				ReadOnly:    true,
 				Annotations: &tools.ToolAnnotations{ReadOnlyHint: ptr(true)},
 			},
-			wantErr: false,
+			wantReadOnly: true,
 		},
 		{
 			desc: "no conflict - both false",
@@ -123,7 +122,7 @@ func TestInitialize_ReadOnlyValidation(t *testing.T) {
 				ReadOnly:    false,
 				Annotations: &tools.ToolAnnotations{ReadOnlyHint: ptr(false)},
 			},
-			wantErr: false,
+			wantReadOnly: false,
 		},
 		{
 			desc: "no conflict - readOnlyHint nil",
@@ -132,7 +131,7 @@ func TestInitialize_ReadOnlyValidation(t *testing.T) {
 				ReadOnly:    true,
 				Annotations: &tools.ToolAnnotations{ReadOnlyHint: nil},
 			},
-			wantErr: false,
+			wantReadOnly: true,
 		},
 		{
 			desc: "precedence - readOnly false, readOnlyHint true overrides to true",
@@ -141,7 +140,7 @@ func TestInitialize_ReadOnlyValidation(t *testing.T) {
 				ReadOnly:    false,
 				Annotations: &tools.ToolAnnotations{ReadOnlyHint: ptr(true)},
 			},
-			wantErr: false,
+			wantReadOnly: true,
 		},
 		{
 			desc: "precedence - readOnly true, readOnlyHint false overrides to false",
@@ -150,33 +149,22 @@ func TestInitialize_ReadOnlyValidation(t *testing.T) {
 				ReadOnly:    true,
 				Annotations: &tools.ToolAnnotations{ReadOnlyHint: ptr(false)},
 			},
-			wantErr: false,
+			wantReadOnly: false,
 		},
 	}
 
 	for _, tc := range tcs {
 		t.Run(tc.desc, func(t *testing.T) {
-			_, err := tc.cfg.Initialize(ctx)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("expected error, got nil")
-				}
-				// Use manual substring check since strings import might not be present
-				errStr := err.Error()
-				found := false
-				for i := 0; i <= len(errStr)-len(tc.errContains); i++ {
-					if errStr[i:i+len(tc.errContains)] == tc.errContains {
-						found = true
-						break
-					}
-				}
-				if !found {
-					t.Errorf("expected error to contain %q, got: %v", tc.errContains, err)
-				}
-			} else {
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
+			tool, err := tc.cfg.Initialize(ctx)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			gotCfg, ok := tool.ToConfig().(spannerexecutesql.Config)
+			if !ok {
+				t.Fatalf("expected Config type, got %T", tool.ToConfig())
+			}
+			if gotCfg.ReadOnly != tc.wantReadOnly {
+				t.Errorf("expected ReadOnly to be %t, got %t", tc.wantReadOnly, gotCfg.ReadOnly)
 			}
 		})
 	}
