@@ -366,7 +366,10 @@ func toolsCallHandler(ctx context.Context, id jsonrpc.RequestId, toolset tools.T
 	}
 
 	// Auto-populate arguments from URL parameters
-	data = mcputil.PopulateUrlParams(ctx, data, toolParams)
+	data, err = mcputil.PopulateUrlParams(ctx, data, toolParams)
+	if err != nil {
+		return jsonrpc.NewError(id, jsonrpc.INVALID_PARAMS, err.Error(), nil), err
+	}
 
 	params, err := parameters.ParseParams(toolParams, data, claimsFromAuth)
 	if err != nil {
