@@ -247,6 +247,11 @@ func toolsCallHandler(ctx context.Context, id jsonrpc.RequestId, toolset tools.T
 		return jsonrpc.NewError(id, jsonrpc.INVALID_PARAMS, err.Error(), nil), err
 	}
 
+	if tool.HasSecureParams() && !supportsSecureParams(req.Params.Meta) {
+		err = fmt.Errorf("method not found: tool %q requires secure parameters which are not supported by the client", toolName)
+		return jsonrpc.NewError(id, jsonrpc.METHOD_NOT_FOUND, err.Error(), nil), err
+	}
+
 	toolParams, err := tool.GetParameters(primitiveMgr.GetSourcesMap())
 	if err != nil {
 		return jsonrpc.NewError(id, jsonrpc.INTERNAL_ERROR, err.Error(), nil), err
@@ -620,18 +625,11 @@ func supportsSecureParams(meta *RequestMetaObject) bool {
 
 // validateAndMergeSecureParams validates and merges standard and secure arguments based on secure parameter definitions.
 func validateAndMergeSecureParams(req CallToolRequest, paramDefs parameters.Parameters) (map[string]any, error) {
-	var hasSecureParams bool
 	secureParamMap := make(map[string]bool)
 	for _, p := range paramDefs {
 		if p != nil && p.GetSecure() {
-			hasSecureParams = true
 			secureParamMap[p.GetName()] = true
 		}
-	}
-
-	// If tool has secure params and client does not support secure params extension, return error
-	if hasSecureParams && !supportsSecureParams(req.Params.Meta) {
-		return nil, fmt.Errorf("tool %q requires com.google.cloud/secure-params extension which is not supported by the client", req.Params.Name)
 	}
 
 	// Validate that secure parameters are only passed in secureArguments

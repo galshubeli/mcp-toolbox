@@ -126,6 +126,15 @@ func (t MockTool) GetScopesRequired() []string {
 	return nil
 }
 
+func (t MockTool) HasSecureParams() bool {
+	for _, p := range t.Params {
+		if p != nil && p.GetSecure() {
+			return true
+		}
+	}
+	return false
+}
+
 // MockPrompt is used to mock prompts in tests
 type MockPrompt struct {
 	Name        string

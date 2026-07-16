@@ -137,6 +137,7 @@ type Tool interface {
 	GetAuthTokenHeaderName(SourceProvider) (string, error)
 	GetParameters(map[string]sources.Source) (parameters.Parameters, error)
 	GetScopesRequired() []string
+	HasSecureParams() bool
 }
 
 // SourceProvider defines the minimal view of the primitives.PrimitiveManager
@@ -231,23 +232,33 @@ type BaseTool[T ToolMeta] struct {
 	annotations      *ToolAnnotations
 	metadata         Manifest
 	StaticParameters parameters.Parameters
+	hasSecureParams  bool
 }
 
 // NewBaseTool constructs a BaseTool from a resolved Config (typically the
 // per-tool Config after Initialize has filled in defaults), the resolved
 // annotations, the precomputed Manifest, and the tool's static parameters.
 func NewBaseTool[T ToolMeta](cfg T, annotations *ToolAnnotations, metadata Manifest, staticParameters parameters.Parameters) BaseTool[T] {
+	var hasSecureParams bool
+	for _, p := range staticParameters {
+		if p != nil && p.GetSecure() {
+			hasSecureParams = true
+			break
+		}
+	}
 	return BaseTool[T]{
 		Cfg:              cfg,
 		annotations:      annotations,
 		metadata:         metadata,
 		StaticParameters: staticParameters,
+		hasSecureParams:  hasSecureParams,
 	}
 }
 
 func (b BaseTool[T]) GetName() string                  { return b.Cfg.GetName() }
 func (b BaseTool[T]) GetDescription() string           { return b.Cfg.GetDescription() }
 func (b BaseTool[T]) GetAuthRequired() []string        { return b.Cfg.GetAuthRequired() }
+func (b BaseTool[T]) HasSecureParams() bool            { return b.hasSecureParams }
 func (b BaseTool[T]) GetScopesRequired() []string      { return b.Cfg.GetScopesRequired() }
 func (b BaseTool[T]) GetAnnotations() *ToolAnnotations { return b.annotations }
 
