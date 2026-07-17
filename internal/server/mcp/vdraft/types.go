@@ -504,7 +504,6 @@ type ResourceAnnotations struct {
 
 // ListResourcesResult represents the result of a list resources request.
 type ListResourcesResult struct {
-	jsonrpc.Result
 	PaginatedResult
 	CacheableResult
 	Resources []Resource `json:"resources"`
@@ -532,7 +531,6 @@ type ResourceTemplate struct {
 
 // ListResourceTemplatesResult represents the result of a list resource templates request.
 type ListResourceTemplatesResult struct {
-	jsonrpc.Result
 	PaginatedResult
 	CacheableResult
 	ResourceTemplates []ResourceTemplate `json:"resourceTemplates"`
