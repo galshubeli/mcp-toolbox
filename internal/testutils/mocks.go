@@ -248,24 +248,35 @@ func (m MockResourceTemplate) ToConfig() resources.ResourceTemplateConfig {
 	return m.config
 }
 
-// NewMockResource creates a new mock resource for testing
-func NewMockResource(name, uri string) MockResource {
+// NewMockResource creates a fully configured mock resource for testing
+func NewMockResource(name, uri, title, mimeType string, size *int64, annotations *resources.ResourceAnnotations) MockResource {
 	return MockResource{
 		config: MockResourceConfig{
 			BaseResourceConfig: resources.BaseResourceConfig{
-				BaseConfig: resources.BaseConfig{Name: name},
-				URI:        uri,
+				BaseConfig: resources.BaseConfig{
+					Name:        name,
+					Title:       title,
+					MimeType:    mimeType,
+					Annotations: annotations,
+				},
+				URI:  uri,
+				Size: size,
 			},
 		},
 	}
 }
 
-// NewMockResourceTemplate creates a new mock resource template for testing
-func NewMockResourceTemplate(name, uriTemplate string) MockResourceTemplate {
+// NewMockResourceTemplate creates a fully configured mock resource template for testing
+func NewMockResourceTemplate(name, uriTemplate, title, mimeType string, annotations *resources.ResourceAnnotations) MockResourceTemplate {
 	return MockResourceTemplate{
 		config: MockResourceTemplateConfig{
 			BaseResourceTemplateConfig: resources.BaseResourceTemplateConfig{
-				BaseConfig:  resources.BaseConfig{Name: name},
+				BaseConfig: resources.BaseConfig{
+					Name:        name,
+					Title:       title,
+					MimeType:    mimeType,
+					Annotations: annotations,
+				},
 				URITemplate: uriTemplate,
 			},
 		},

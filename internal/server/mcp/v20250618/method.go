@@ -21,7 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-
+	"slices"
 	"time"
 
 	"github.com/googleapis/mcp-toolbox/internal/auth"
@@ -48,6 +48,12 @@ func ProcessMethod(ctx context.Context, id jsonrpc.RequestId, method string, too
 		return toolsListHandler(ctx, id, primitiveMgr, toolset, body)
 	case TOOLS_CALL:
 		return toolsCallHandler(ctx, id, toolset, primitiveMgr, body, header)
+	case RESOURCES_LIST:
+		return resourcesListHandler(ctx, id, primitiveMgr, body)
+	case RESOURCES_TEMPLATES_LIST:
+		return resourceTemplatesListHandler(ctx, id, primitiveMgr, body)
+	case RESOURCES_READ:
+		return resourcesReadHandler(ctx, id, primitiveMgr, body)
 	case PROMPTS_LIST:
 		return promptsListHandler(ctx, id, primitiveMgr, promptset, body)
 	case PROMPTS_GET:
@@ -84,6 +90,7 @@ func initializeHandler(ctx context.Context, id jsonrpc.RequestId, body []byte) (
 			Prompts: &ListChanged{
 				ListChanged: &promptsListChanged,
 			},
+			Resources: &ResourceCapabilities{},
 		},
 		ServerInfo: Implementation{
 			BaseMetadata: BaseMetadata{
@@ -506,6 +513,172 @@ func promptsGetHandler(ctx context.Context, id jsonrpc.RequestId, promptset prom
 	result := GetPromptResult{
 		Description: prompt.Manifest().Description,
 		Messages:    promptMessages,
+	}
+
+	return jsonrpc.JSONRPCResponse{
+		Jsonrpc: jsonrpc.JSONRPC_VERSION,
+		Id:      id,
+		Result:  result,
+	}, nil
+}
+
+// resourcesListHandler generates a response for resources/list.
+func resourcesListHandler(ctx context.Context, id jsonrpc.RequestId, primitiveMgr *primitives.PrimitiveManager, body []byte) (any, error) {
+	var req ListResourcesRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		err = fmt.Errorf("invalid mcp resources list request: %w", err)
+		return jsonrpc.NewError(id, jsonrpc.INVALID_REQUEST, err.Error(), nil), err
+	}
+
+	resourcesMap := primitiveMgr.GetResourcesMap()
+	keys := make([]string, 0, len(resourcesMap))
+	for k := range resourcesMap {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+
+	result := &ListResourcesResult{
+		Resources: make([]Resource, 0, len(keys)),
+	}
+
+	for _, k := range keys {
+		res := resourcesMap[k]
+		cfg := res.ToConfig()
+
+		var annotations *ResourceAnnotations
+		if internalAnns := cfg.GetAnnotations(); internalAnns != nil {
+			if len(internalAnns.Audience) > 0 || internalAnns.Priority != nil || internalAnns.LastModified != "" {
+				annotations = &ResourceAnnotations{}
+				for _, aud := range internalAnns.Audience {
+					annotations.Audience = append(annotations.Audience, Role(aud))
+				}
+				if internalAnns.Priority != nil {
+					annotations.Priority = *internalAnns.Priority
+				}
+				if internalAnns.LastModified != "" {
+					annotations.LastModified = internalAnns.LastModified
+				}
+			}
+		}
+
+		result.Resources = append(result.Resources, Resource{
+			BaseMetadata: BaseMetadata{Name: k, Title: cfg.GetTitle()},
+			Uri:          cfg.GetURI(),
+			Description:  cfg.GetDescription(),
+			MimeType:     cfg.GetMimeType(),
+			Size:         cfg.GetSize(),
+			Annotations:  annotations,
+		})
+	}
+
+	return jsonrpc.JSONRPCResponse{
+		Jsonrpc: jsonrpc.JSONRPC_VERSION,
+		Id:      id,
+		Result:  result,
+	}, nil
+}
+
+// resourceTemplatesListHandler generates a response for resources/templates/list.
+func resourceTemplatesListHandler(ctx context.Context, id jsonrpc.RequestId, primitiveMgr *primitives.PrimitiveManager, body []byte) (any, error) {
+	var req ListResourceTemplatesRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		err = fmt.Errorf("invalid mcp resource templates list request: %w", err)
+		return jsonrpc.NewError(id, jsonrpc.INVALID_REQUEST, err.Error(), nil), err
+	}
+
+	templatesMap := primitiveMgr.GetResourceTemplatesMap()
+	keys := make([]string, 0, len(templatesMap))
+	for k := range templatesMap {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+
+	result := &ListResourceTemplatesResult{
+		ResourceTemplates: make([]ResourceTemplate, 0, len(keys)),
+	}
+
+	for _, k := range keys {
+		rt := templatesMap[k]
+		cfg := rt.ToConfig()
+
+		var annotations *ResourceAnnotations
+		if internalAnns := cfg.GetAnnotations(); internalAnns != nil {
+			if len(internalAnns.Audience) > 0 || internalAnns.Priority != nil || internalAnns.LastModified != "" {
+				annotations = &ResourceAnnotations{}
+				for _, aud := range internalAnns.Audience {
+					annotations.Audience = append(annotations.Audience, Role(aud))
+				}
+				if internalAnns.Priority != nil {
+					annotations.Priority = *internalAnns.Priority
+				}
+				if internalAnns.LastModified != "" {
+					annotations.LastModified = internalAnns.LastModified
+				}
+			}
+		}
+
+		result.ResourceTemplates = append(result.ResourceTemplates, ResourceTemplate{
+			BaseMetadata: BaseMetadata{Name: k, Title: cfg.GetTitle()},
+			UriTemplate:  cfg.GetURITemplate(),
+			Description:  cfg.GetDescription(),
+			MimeType:     cfg.GetMimeType(),
+			Annotations:  annotations,
+		})
+	}
+
+	return jsonrpc.JSONRPCResponse{
+		Jsonrpc: jsonrpc.JSONRPC_VERSION,
+		Id:      id,
+		Result:  result,
+	}, nil
+}
+
+// resourcesReadHandler generates a response for resources/read.
+func resourcesReadHandler(ctx context.Context, id jsonrpc.RequestId, primitiveMgr *primitives.PrimitiveManager, body []byte) (any, error) {
+	var req ReadResourceRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		err = fmt.Errorf("invalid mcp resources read request: %w", err)
+		return jsonrpc.NewError(id, jsonrpc.INVALID_REQUEST, err.Error(), nil), err
+	}
+
+	uri := req.Params.Uri
+	res, resTmpl, params, err := primitiveMgr.GetResourceOrTemplateByURI(uri)
+	if err != nil {
+		err = fmt.Errorf("resource lookup failed: %w", err)
+		return jsonrpc.NewError(id, jsonrpc.RESOURCE_NOT_FOUND, err.Error(), nil), err
+	}
+
+	var content any
+	var mimeType string
+
+	if res != nil {
+		content, err = res.Read(ctx, nil)
+		mimeType = res.ToConfig().GetMimeType()
+	} else {
+		content, err = resTmpl.Read(ctx, params)
+		mimeType = resTmpl.ToConfig().GetMimeType()
+	}
+
+	if err != nil {
+		err = fmt.Errorf("failed to read resource: %w", err)
+		return jsonrpc.NewError(id, jsonrpc.INTERNAL_ERROR, err.Error(), nil), err
+	}
+
+	// Currently only TextResourceContent is fully supported per plan
+	textContent, ok := content.(string)
+	if !ok {
+		err = fmt.Errorf("unsupported resource content type, expected string")
+		return jsonrpc.NewError(id, jsonrpc.INTERNAL_ERROR, err.Error(), nil), err
+	}
+
+	result := &ReadResourceResult{
+		Contents: []any{
+			TextResourceContent{
+				Uri:      uri,
+				MimeType: mimeType,
+				Text:     textContent,
+			},
+		},
 	}
 
 	return jsonrpc.JSONRPCResponse{

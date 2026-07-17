@@ -46,6 +46,8 @@ type ResourceConfig interface {
 	GetTitle() string
 	GetDescription() string
 	GetMimeType() string
+	GetSize() *int64
+	GetAnnotations() *ResourceAnnotations
 	Initialize(ctx context.Context) (Resource, error)
 }
 
@@ -71,10 +73,11 @@ type BaseConfig struct {
 	Annotations *ResourceAnnotations `yaml:"annotations,omitempty"`
 }
 
-func (c BaseConfig) GetName() string        { return c.Name }
-func (c BaseConfig) GetTitle() string       { return c.Title }
-func (c BaseConfig) GetDescription() string { return c.Description }
-func (c BaseConfig) GetMimeType() string    { return c.MimeType }
+func (c BaseConfig) GetName() string                      { return c.Name }
+func (c BaseConfig) GetTitle() string                     { return c.Title }
+func (c BaseConfig) GetDescription() string               { return c.Description }
+func (c BaseConfig) GetMimeType() string                  { return c.MimeType }
+func (c BaseConfig) GetAnnotations() *ResourceAnnotations { return c.Annotations }
 
 // BaseResourceConfig contains the fields for a specific resource configuration.
 type BaseResourceConfig struct {
@@ -86,6 +89,10 @@ type BaseResourceConfig struct {
 // GetURI returns the URI of the resource configuration.
 func (c BaseResourceConfig) GetURI() string {
 	return c.URI
+}
+
+func (c BaseResourceConfig) GetSize() *int64 {
+	return c.Size
 }
 
 type AudienceRole string
@@ -201,6 +208,7 @@ type ResourceTemplateConfig interface {
 	GetTitle() string
 	GetDescription() string
 	GetMimeType() string
+	GetAnnotations() *ResourceAnnotations
 	Initialize(ctx context.Context) (ResourceTemplate, error)
 }
 

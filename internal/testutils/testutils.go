@@ -162,13 +162,13 @@ var MockPrompt2 = NewMockPrompt("prompt2", "", prompts.Arguments{
 	{Parameter: parameters.NewStringParameter("arg1", "This is the first argument.")},
 })
 
-var MockResource1 = NewMockResource("mock_resource_1", "file:///mock/resource/1")
+var MockResource1 = NewMockResource("mock_resource_1", "file:///mock/resource/1", "", "", nil, nil)
 
 // TODO: Change to text type resource
-var MockResource2 = NewMockResource("mock_resource_2", "file:///mock/resource/2")
+var MockResource2 = NewMockResource("mock_resource_2", "file:///mock/resource/2", "", "", nil, nil)
 
-var MockTemplate1 = NewMockResourceTemplate("mock_template_1", "file://{path}")
-var MockTemplate2 = NewMockResourceTemplate("mock_template_2", "file:///logs/{path}")
+var MockTemplate1 = NewMockResourceTemplate("mock_template_1", "file://{path}", "", "", nil)
+var MockTemplate2 = NewMockResourceTemplate("mock_template_2", "file:///logs/{path}", "", "", nil)
 
 // SetUpPrimitives sets up primitives to test against
 func SetUpPrimitives(t *testing.T, mockTools []MockTool, mockPrompts []MockPrompt, mockResources []MockResource, mockTemplates []MockResourceTemplate) (map[string]tools.Tool, map[string]tools.Toolset, map[string]prompts.Prompt, map[string]prompts.Promptset, map[string]resources.Resource, map[string]resources.ResourceTemplate) {

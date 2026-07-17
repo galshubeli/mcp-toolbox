@@ -273,7 +273,11 @@ func (r *PrimitiveManager) GetResourceOrTemplateByURI(uri string) (resources.Res
 
 			matches := re.FindStringSubmatch(parsedURI.Path)
 			if len(matches) == 2 {
-				return nil, rt, map[string]any{"path": matches[1]}, nil
+				decodedPath, err := url.PathUnescape(matches[1])
+				if err != nil {
+					decodedPath = matches[1]
+				}
+				return nil, rt, map[string]any{"path": decodedPath}, nil
 			}
 		}
 	}

@@ -28,11 +28,14 @@ const PROTOCOL_VERSION = util.VERSION_DRAFT
 
 // methods that are supported.
 const (
-	SERVER_DISCOVER = "server/discover"
-	TOOLS_LIST      = "tools/list"
-	TOOLS_CALL      = "tools/call"
-	PROMPTS_LIST    = "prompts/list"
-	PROMPTS_GET     = "prompts/get"
+	SERVER_DISCOVER          = "server/discover"
+	TOOLS_LIST               = "tools/list"
+	TOOLS_CALL               = "tools/call"
+	PROMPTS_LIST             = "prompts/list"
+	PROMPTS_GET              = "prompts/get"
+	RESOURCES_LIST           = "resources/list"
+	RESOURCES_TEMPLATES_LIST = "resources/templates/list"
+	RESOURCES_READ           = "resources/read"
 )
 
 /* Request Params */
@@ -163,15 +166,22 @@ type Implementation struct {
 	Version string `json:"version"`
 }
 
+// ResourceCapabilities represents the capabilities of the server for resources.
+type ResourceCapabilities struct {
+	Subscribe   bool `json:"subscribe,omitempty"`
+	ListChanged bool `json:"listChanged,omitempty"`
+}
+
 // ServerCapabilities represents capabilities that a server may support. Known
 // capabilities are defined here, in this schema, but this is not a closed set: any
 // server can define its own, additional capabilities.
 type ServerCapabilities struct {
-	Tools   *ListChanged `json:"tools,omitempty"`
-	Prompts *ListChanged `json:"prompts,omitempty"`
+	Tools     *ListChanged          `json:"tools,omitempty"`
+	Prompts   *ListChanged          `json:"prompts,omitempty"`
+	Resources *ResourceCapabilities `json:"resources,omitempty"`
 }
 
-// ListChange represents whether the server supports notification for changes to the capabilities.
+// ListChanged represents whether the server supports notification for changes to the capabilities.
 type ListChanged struct {
 	ListChanged *bool `json:"listChanged,omitempty"`
 }
@@ -457,4 +467,103 @@ type PromptArgument struct {
 type PromptMessage struct {
 	Role    string      `json:"role"`
 	Content TextContent `json:"content"`
+}
+
+/* Resources */
+
+// Sent from the client to request a list of resources the server has.
+type ListResourcesRequest struct {
+	PaginatedRequest
+}
+
+// Resource represents a single resource that a client can read from a server.
+type Resource struct {
+	BaseMetadata
+	// A description of the resource.
+	Description string `json:"description,omitempty"`
+	// The URI of this resource.
+	Uri string `json:"uri"`
+	// The MIME type of this resource, if known.
+	MimeType string `json:"mimeType,omitempty"`
+	// The size of the resource in bytes.
+	Size *int64 `json:"size,omitempty"`
+	// Optional additional resource information.
+	Annotations *ResourceAnnotations `json:"annotations,omitempty"`
+	// See [General fields: `_meta`](/specification/2025-11-25/basic/index#_meta) for notes on `_meta` usage.
+	Metadata map[string]any `json:"_meta,omitempty"`
+}
+
+// ResourceAnnotations represents the annotations for a resource.
+type ResourceAnnotations struct {
+	// Describes who the intended customer of this object or data is.
+	Audience []Role `json:"audience,omitempty"`
+	// Describes how important this data is for operating the server.
+	Priority     float64 `json:"priority,omitempty"`
+	LastModified string  `json:"lastModified,omitempty"`
+}
+
+// ListResourcesResult represents the result of a list resources request.
+type ListResourcesResult struct {
+	jsonrpc.Result
+	PaginatedResult
+	CacheableResult
+	Resources []Resource `json:"resources"`
+}
+
+// Sent from the client to request a list of resource templates the server has.
+type ListResourceTemplatesRequest struct {
+	PaginatedRequest
+}
+
+// ResourceTemplate represents a template for a resource that a client can resolve.
+type ResourceTemplate struct {
+	BaseMetadata
+	// A description of what this template is for.
+	Description string `json:"description,omitempty"`
+	// A URI template (according to RFC 6570) that can be used to construct resource URIs.
+	UriTemplate string `json:"uriTemplate"`
+	// The MIME type for all resources that match this template, if known.
+	MimeType string `json:"mimeType,omitempty"`
+	// Optional additional resource information.
+	Annotations *ResourceAnnotations `json:"annotations,omitempty"`
+	// See [General fields: `_meta`](/specification/2025-11-25/basic/index#_meta) for notes on `_meta` usage.
+	Metadata map[string]any `json:"_meta,omitempty"`
+}
+
+// ListResourceTemplatesResult represents the result of a list resource templates request.
+type ListResourceTemplatesResult struct {
+	jsonrpc.Result
+	PaginatedResult
+	CacheableResult
+	ResourceTemplates []ResourceTemplate `json:"resourceTemplates"`
+}
+
+// Sent from the client to read a specific resource URI.
+type ReadResourceRequest struct {
+	jsonrpc.Request
+	Params ReadResourceRequestParams `json:"params"`
+}
+
+// ReadResourceRequestParams represents the parameters for a read resource request.
+type ReadResourceRequestParams struct {
+	RequestParams
+	// The URI of the resource to read.
+	Uri string `json:"uri"`
+}
+
+// ReadResourceResult represents the result of a read resource request.
+type ReadResourceResult struct {
+	jsonrpc.Result
+	CacheableResult
+	Contents []any `json:"contents"` // TextResourceContent
+}
+
+// TextResourceContent represents text-based resource content.
+type TextResourceContent struct {
+	// The URI of the resource.
+	Uri string `json:"uri"`
+	// The MIME type of this resource, if known.
+	MimeType string `json:"mimeType,omitempty"`
+	// The text of the resource.
+	Text string `json:"text"`
 }

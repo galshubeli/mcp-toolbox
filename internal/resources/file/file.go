@@ -334,6 +334,10 @@ func (c *TemplateConfig) Initialize(ctx context.Context) (resources.ResourceTemp
 		baseDir = "."
 	}
 
+	if len(c.AllowedPaths) == 0 {
+		c.AllowedPaths = []string{baseDir}
+	}
+
 	for _, p := range c.AllowedPaths {
 		// Resolve relative allowedPaths against the config file's base directory
 		if !filepath.IsAbs(p) {
