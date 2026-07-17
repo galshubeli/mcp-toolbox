@@ -334,8 +334,10 @@ func (c *TemplateConfig) Initialize(ctx context.Context) (resources.ResourceTemp
 		baseDir = "."
 	}
 
+	implicitAllowedPaths := false
 	if len(c.AllowedPaths) == 0 {
-		c.AllowedPaths = []string{baseDir}
+		c.AllowedPaths = []string{"."}
+		implicitAllowedPaths = true
 	}
 
 	for _, p := range c.AllowedPaths {
@@ -372,6 +374,7 @@ func (c *TemplateConfig) Initialize(ctx context.Context) (resources.ResourceTemp
 		config:                 c,
 		unresolvedAllowedPaths: unresolvedAllowedPaths,
 		resolvedAllowedPaths:   resolvedAllowedPaths,
+		implicitAllowedPaths:   implicitAllowedPaths,
 	}, nil
 }
 
@@ -380,6 +383,7 @@ type FileTemplate struct {
 	config                 *TemplateConfig
 	unresolvedAllowedPaths []string
 	resolvedAllowedPaths   []string
+	implicitAllowedPaths   bool
 }
 
 // Read retrieves the file content using template parameters.
@@ -431,19 +435,19 @@ func (r *FileTemplate) Read(ctx context.Context, params map[string]any) (any, er
 	}
 
 	checkSandbox := func(pathToCheck string, allowedPaths []string) error {
-		if len(allowedPaths) > 0 {
-			isAllowed := false
-			for _, allowedDir := range allowedPaths {
-				rel, err := filepath.Rel(allowedDir, pathToCheck)
-				if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-					isAllowed = true
-					break
-				}
+		isAllowed := false
+		for _, allowedDir := range allowedPaths {
+			rel, err := filepath.Rel(allowedDir, pathToCheck)
+			if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				isAllowed = true
+				break
 			}
-			if !isAllowed {
-				return fmt.Errorf("security violation: path %q is not within any allowedPaths", pathToCheck)
-			}
-		} else {
+		}
+		if !isAllowed {
+			return fmt.Errorf("security violation: path %q is not within any allowedPaths", pathToCheck)
+		}
+
+		if r.implicitAllowedPaths {
 			parts := strings.Split(filepath.ToSlash(pathToCheck), "/")
 			for _, part := range parts {
 				if strings.HasPrefix(part, ".") && part != "." && part != ".." {

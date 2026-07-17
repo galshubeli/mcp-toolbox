@@ -901,7 +901,7 @@ func TestFileTemplate_HiddenFilesWhenNoAllowedPaths(t *testing.T) {
 
 	// NO allowedPaths specified
 	yamlStr := "uriTemplate: file://{path}\n"
-	ctx := context.Background()
+	ctx := context.WithValue(context.Background(), resources.BaseDirKey, tmpDir)
 	decoder := yaml.NewDecoder(bytes.NewReader([]byte(yamlStr)), yaml.Strict())
 	cfg, err := resources.DecodeTemplateConfig(ctx, "file", "test", decoder)
 	if err != nil {
@@ -952,7 +952,7 @@ func TestFileTemplate_RelativePathMiddleURITemplate(t *testing.T) {
 	uriTemplate := fmt.Sprintf("file://%s/logs/{path}/data.txt", tmpDirSlash)
 
 	yamlStr := fmt.Sprintf("uriTemplate: %s\n", uriTemplate)
-	ctx := context.Background()
+	ctx := context.WithValue(context.Background(), resources.BaseDirKey, tmpDir)
 	decoder := yaml.NewDecoder(bytes.NewReader([]byte(yamlStr)), yaml.Strict())
 	cfg, err := resources.DecodeTemplateConfig(ctx, "file", "test", decoder)
 	if err != nil {
