@@ -41,7 +41,7 @@ func TestTextResourceInitialization(t *testing.T) {
 		{
 			name: "success with defaults",
 			config: Config{
-				BaseConfig: resources.BaseConfig{Name: "test1"},
+				BaseResourceConfig: resources.BaseResourceConfig{BaseConfig: resources.BaseConfig{Name: "test1"}},
 				Text:       "Hello, world!",
 			},
 			wantError: false,
@@ -51,11 +51,11 @@ func TestTextResourceInitialization(t *testing.T) {
 		{
 			name: "success with overrides",
 			config: Config{
-				BaseConfig: resources.BaseConfig{
+				BaseResourceConfig: resources.BaseResourceConfig{BaseConfig: resources.BaseConfig{
 					Name:        "test2",
 					MimeType:    "application/json",
 					Annotations: &resources.ResourceAnnotations{Priority: floatPtr(0.5)},
-				},
+				}},
 				Text: `{"hello":"world"}`,
 			},
 			wantError: false,
@@ -65,7 +65,7 @@ func TestTextResourceInitialization(t *testing.T) {
 		{
 			name: "error missing text payload",
 			config: Config{
-				BaseConfig: resources.BaseConfig{Name: "test3"},
+				BaseResourceConfig: resources.BaseResourceConfig{BaseConfig: resources.BaseConfig{Name: "test3"}},
 				Text:       "",
 			},
 			wantError:   true,
@@ -74,10 +74,10 @@ func TestTextResourceInitialization(t *testing.T) {
 		{
 			name: "explicit 0.0 priority",
 			config: Config{
-				BaseConfig: resources.BaseConfig{
+				BaseResourceConfig: resources.BaseResourceConfig{BaseConfig: resources.BaseConfig{
 					Name:        "test-priority",
 					Annotations: &resources.ResourceAnnotations{Priority: floatPtr(0.0)},
-				},
+				}},
 				Text: "priority test",
 			},
 			wantError: false,
@@ -87,7 +87,7 @@ func TestTextResourceInitialization(t *testing.T) {
 		{
 			name: "multi-byte unicode size calculation",
 			config: Config{
-				BaseConfig: resources.BaseConfig{Name: "test-unicode"},
+				BaseResourceConfig: resources.BaseResourceConfig{BaseConfig: resources.BaseConfig{Name: "test-unicode"}},
 				Text:       "Hello 🌍",
 			},
 			wantError: false,
@@ -97,7 +97,7 @@ func TestTextResourceInitialization(t *testing.T) {
 		{
 			name: "pure whitespace payload",
 			config: Config{
-				BaseConfig: resources.BaseConfig{Name: "test-whitespace"},
+				BaseResourceConfig: resources.BaseResourceConfig{BaseConfig: resources.BaseConfig{Name: "test-whitespace"}},
 				Text:       "   \n  ",
 			},
 			wantError: false,
@@ -107,10 +107,10 @@ func TestTextResourceInitialization(t *testing.T) {
 		{
 			name: "explicit empty mimetype defaults to text/plain",
 			config: Config{
-				BaseConfig: resources.BaseConfig{
+				BaseResourceConfig: resources.BaseResourceConfig{BaseConfig: resources.BaseConfig{
 					Name:     "test-empty-mime",
 					MimeType: "",
-				},
+				}},
 				Text: "hello",
 			},
 			wantError: false,
