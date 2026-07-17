@@ -21,9 +21,11 @@ import (
 	"github.com/googleapis/mcp-toolbox/internal/auth"
 	"github.com/googleapis/mcp-toolbox/internal/embeddingmodels"
 	"github.com/googleapis/mcp-toolbox/internal/prompts"
+	"github.com/googleapis/mcp-toolbox/internal/resources"
 	"github.com/googleapis/mcp-toolbox/internal/server/primitives"
 	"github.com/googleapis/mcp-toolbox/internal/sources"
 	"github.com/googleapis/mcp-toolbox/internal/sources/alloydbpg"
+	"github.com/googleapis/mcp-toolbox/internal/testutils"
 	"github.com/googleapis/mcp-toolbox/internal/tools"
 )
 
@@ -56,7 +58,9 @@ func TestUpdateServer(t *testing.T) {
 			Prompts: []*prompts.Prompt{},
 		},
 	}
-	primMgr := primitives.NewPrimitiveManager(newSources, newAuth, newEmbeddingModels, newTools, newToolsets, newPrompts, newPromptsets, nil)
+	newResources := map[string]resources.Resource{"example-resource": nil}
+	newResourceTemplates := map[string]resources.ResourceTemplate{"example-template": nil}
+	primMgr := primitives.NewPrimitiveManager(newSources, newAuth, newEmbeddingModels, newTools, newToolsets, newPrompts, newPromptsets, newResources, newResourceTemplates)
 
 	gotSource, _ := primMgr.GetSource("example-source")
 	if diff := cmp.Diff(gotSource, newSources["example-source"]); diff != "" {
@@ -88,6 +92,16 @@ func TestUpdateServer(t *testing.T) {
 		t.Errorf("error updating server, promptset (-want +got):\n%s", diff)
 	}
 
+	gotResource, _ := primMgr.GetResource("example-resource")
+	if diff := cmp.Diff(gotResource, newResources["example-resource"]); diff != "" {
+		t.Errorf("error updating server, resources (-want +got):\n%s", diff)
+	}
+
+	gotTemplate, _ := primMgr.GetResourceTemplate("example-template")
+	if diff := cmp.Diff(gotTemplate, newResourceTemplates["example-template"]); diff != "" {
+		t.Errorf("error updating server, resource templates (-want +got):\n%s", diff)
+	}
+
 	updateSource := map[string]sources.Source{
 		"example-source2": &alloydbpg.Source{
 			Config: alloydbpg.Config{
@@ -97,9 +111,61 @@ func TestUpdateServer(t *testing.T) {
 		},
 	}
 
-	primMgr.SetPrimitives(updateSource, newAuth, newEmbeddingModels, newTools, newToolsets, newPrompts, newPromptsets, nil)
+	primMgr.SetPrimitives(updateSource, newAuth, newEmbeddingModels, newTools, newToolsets, newPrompts, newPromptsets, newResources, newResourceTemplates)
 	gotSource, _ = primMgr.GetSource("example-source2")
 	if diff := cmp.Diff(gotSource, updateSource["example-source2"]); diff != "" {
 		t.Errorf("error updating server, sources (-want +got):\n%s", diff)
+	}
+}
+
+// TestPrimitiveManager_GetResourceOrTemplateByURI verifies that the primitive
+// manager can correctly resolve exact URI matches for static resources, or
+// fallback to matching and extracting parameters for URI templates.
+func TestPrimitiveManager_GetResourceOrTemplateByURI(t *testing.T) {
+	primMgr := primitives.NewPrimitiveManager(nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	resourcesMap := map[string]resources.Resource{
+		"static-res": testutils.NewMockResource("static-res", "file:///mock/resource/1"),
+	}
+	templatesMap := map[string]resources.ResourceTemplate{
+		"test-tmpl": testutils.NewMockResourceTemplate("test-tmpl", "file:///logs/{path}"),
+	}
+
+	primMgr.SetPrimitives(nil, nil, nil, nil, nil, nil, nil, resourcesMap, templatesMap)
+
+	// Test matching static resource
+	res, tmpl, params, err := primMgr.GetResourceOrTemplateByURI("file:///mock/resource/1")
+	if err != nil {
+		t.Fatalf("GetResourceOrTemplateByURI failed for static resource: %v", err)
+	}
+	if res == nil {
+		t.Errorf("Expected to find static resource, got nil")
+	}
+	if tmpl != nil {
+		t.Errorf("Expected template to be nil for static resource, got %v", tmpl)
+	}
+	if params != nil {
+		t.Errorf("Expected params to be nil for static resource, got %v", params)
+	}
+
+	// Test matching template
+	res, tmpl, params, err = primMgr.GetResourceOrTemplateByURI("file:///dynamic/dir/file.log")
+	if err != nil {
+		t.Fatalf("GetResourceOrTemplateByURI failed for template match: %v", err)
+	}
+	if res != nil {
+		t.Errorf("Expected resource to be nil for template match, got %v", res)
+	}
+	if tmpl == nil {
+		t.Errorf("Expected to find template, got nil")
+	}
+	if params == nil || params["path"] != "/dynamic/dir/file.log" {
+		t.Errorf("Expected params to contain path=/dynamic/dir/file.log, got %v", params)
+	}
+
+	// Test no match
+	_, _, _, err = primMgr.GetResourceOrTemplateByURI("http://example.com")
+	if err == nil {
+		t.Errorf("Expected error for unmatched URI, got nil")
 	}
 }
