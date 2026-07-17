@@ -577,38 +577,47 @@ func UnmarshalYAMLResourceConfig(ctx context.Context, name string, r map[string]
 		return nil, fmt.Errorf("missing required 'type' field for resource %q", name)
 	}
 
+	var uriStr string
+	uriProvided := false
 	if uriVal, ok := r["uri"]; ok {
-		if uriStr, isString := uriVal.(string); !isString {
+		var isString bool
+		uriStr, isString = uriVal.(string)
+		if !isString {
 			return nil, fmt.Errorf("invalid 'uri' field for resource %q (must be a string)", name)
-		} else {
-			parsed, err := url.Parse(uriStr)
-			if err != nil || parsed.Scheme == "" {
-				return nil, fmt.Errorf("invalid 'uri' field for resource %q: must be a valid RFC-compliant absolute URI with a scheme", name)
-			}
-
-			// Normalize scheme and host to lowercase for consistent comparison and usage
-			parsed.Scheme = strings.ToLower(parsed.Scheme)
-			parsed.Host = strings.ToLower(parsed.Host)
-
-			// Scheme whitelisting
-			if resourceType == "file" && parsed.Scheme != "file" {
-				return nil, fmt.Errorf("invalid scheme for file resource %q: must be 'file'", name)
-			}
-
-			// Update the map with the normalized URI so that unmarshaling and
-			// collision detection see the normalized form (e.g. lowercase scheme and host)
-			r["uri"] = parsed.String()
 		}
+		uriProvided = true
 	} else {
 		switch resourceType {
 		case "file":
-			r["uri"] = fmt.Sprintf("file://%s", name)
+			uriStr = fmt.Sprintf("file://%s", url.PathEscape(name))
 		case "text":
-			r["uri"] = fmt.Sprintf("text://%s", name)
+			uriStr = fmt.Sprintf("text://%s", url.PathEscape(name))
 		default:
 			return nil, fmt.Errorf("missing required 'uri' field for resource %q", name)
 		}
 	}
+
+	parsed, err := url.Parse(uriStr)
+	if err != nil || parsed.Scheme == "" {
+		if uriProvided {
+			return nil, fmt.Errorf("invalid 'uri' field for resource %q: must be a valid RFC-compliant absolute URI with a scheme", name)
+		} else {
+			return nil, fmt.Errorf("invalid fallback 'uri' for resource %q: provide an explicit 'uri'", name)
+		}
+	}
+
+	// Normalize scheme and host to lowercase for consistent comparison and usage
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	parsed.Host = strings.ToLower(parsed.Host)
+
+	// Scheme whitelisting
+	if resourceType == "file" && parsed.Scheme != "file" {
+		return nil, fmt.Errorf("invalid scheme for file resource %q: must be 'file'", name)
+	}
+
+	// Update the map with the normalized URI so that unmarshaling and
+	// collision detection see the normalized form (e.g. lowercase scheme and host)
+	r["uri"] = parsed.String()
 	dec, err := util.NewStrictDecoder(r)
 	if err != nil {
 		return nil, fmt.Errorf("error creating decoder: %s", err)

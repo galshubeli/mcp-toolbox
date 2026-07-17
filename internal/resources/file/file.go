@@ -436,10 +436,12 @@ func (r *FileTemplate) Read(ctx context.Context, params map[string]any) (any, er
 
 	checkSandbox := func(pathToCheck string, allowedPaths []string) error {
 		isAllowed := false
+		var matchedRel string
 		for _, allowedDir := range allowedPaths {
 			rel, err := filepath.Rel(allowedDir, pathToCheck)
 			if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 				isAllowed = true
+				matchedRel = rel
 				break
 			}
 		}
@@ -448,7 +450,7 @@ func (r *FileTemplate) Read(ctx context.Context, params map[string]any) (any, er
 		}
 
 		if r.implicitAllowedPaths {
-			parts := strings.Split(filepath.ToSlash(pathToCheck), "/")
+			parts := strings.Split(filepath.ToSlash(matchedRel), "/")
 			for _, part := range parts {
 				if strings.HasPrefix(part, ".") && part != "." && part != ".." {
 					return fmt.Errorf("security violation: access to hidden file or directory %q is blocked when allowedPaths is not specified", pathToCheck)
