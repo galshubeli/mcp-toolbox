@@ -56,8 +56,8 @@ func init() {
 // Config represents the configuration for a file resource.
 type Config struct {
 	resources.BaseResourceConfig `yaml:",inline"`
-	Path                 string `yaml:"path"`
-	MaxSize              *int64 `yaml:"max_size,omitempty"`
+	Path                         string `yaml:"path"`
+	MaxSize                      *int64 `yaml:"max_size,omitempty"`
 
 	absPath         string
 	resolvedBaseDir string
@@ -326,7 +326,7 @@ func (r *FileResource) ToConfig() resources.ResourceConfig {
 // TemplateConfig represents the configuration for a file resource template.
 type TemplateConfig struct {
 	resources.BaseResourceTemplateConfig `yaml:",inline"`
-	AllowedPaths                 []string `yaml:"allowedPaths,omitempty"`
+	AllowedPaths                         []string `yaml:"allowedPaths,omitempty"`
 }
 
 // ResourceTemplateConfigType returns the resource template type identifier.
