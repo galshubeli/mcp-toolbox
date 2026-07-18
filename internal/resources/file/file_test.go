@@ -972,3 +972,23 @@ func TestFileTemplate_RelativePathMiddleURITemplate(t *testing.T) {
 		t.Errorf("Expected 'server logs', got %q", content)
 	}
 }
+
+func TestFileTemplate_ConfigNotMutated(t *testing.T) {
+	ctx := context.WithValue(context.Background(), resources.BaseDirKey, t.TempDir())
+	cfg := &TemplateConfig{
+		BaseResourceTemplateConfig: resources.BaseResourceTemplateConfig{
+			BaseConfig: resources.BaseConfig{
+				Type: "file",
+				Name: "test-template",
+			},
+			URITemplate: "file://{path}",
+		},
+		// AllowedPaths intentionally left empty/nil
+	}
+
+	_, _ = cfg.Initialize(ctx)
+
+	if len(cfg.AllowedPaths) != 0 {
+		t.Errorf("expected AllowedPaths to remain empty/nil, but it was mutated to: %v", cfg.AllowedPaths)
+	}
+}

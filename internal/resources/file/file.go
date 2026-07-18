@@ -334,13 +334,14 @@ func (c *TemplateConfig) Initialize(ctx context.Context) (resources.ResourceTemp
 		baseDir = "."
 	}
 
+	allowedPaths := c.AllowedPaths
 	implicitAllowedPaths := false
-	if len(c.AllowedPaths) == 0 {
-		c.AllowedPaths = []string{"."}
+	if len(allowedPaths) == 0 {
+		allowedPaths = []string{"."}
 		implicitAllowedPaths = true
 	}
 
-	for _, p := range c.AllowedPaths {
+	for _, p := range allowedPaths {
 		// Resolve relative allowedPaths against the config file's base directory
 		if !filepath.IsAbs(p) {
 			p = filepath.Join(baseDir, p)
