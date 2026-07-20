@@ -1449,3 +1449,89 @@ func TestMCPAuthEnableAPIClash(t *testing.T) {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
+
+func TestInitializeTools_ReadOnlySuppression(t *testing.T) {
+	ctx, err := testutils.ContextWithNewLogger()
+	if err != nil {
+		t.Fatalf("error setting up logger: %s", err)
+	}
+	instrumentation, err := telemetry.CreateTelemetryInstrumentation("0.0.0")
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
+	ctx = util.WithInstrumentation(ctx, instrumentation)
+
+	cfg := server.ServerConfig{
+		SourceConfigs: server.SourceConfigs{
+			"mock-db": testutils.MockSourceConfig{ReadOnly: true},
+		},
+		ToolConfigs: server.ToolConfigs{
+			"write-tool": &testutils.MockToolConfig{
+				ConfigBase: tools.ConfigBase{Name: "write-tool"},
+				Source:     "mock-db",
+			},
+			"readonly-tool": &testutils.MockToolConfig{
+				ConfigBase: tools.ConfigBase{Name: "readonly-tool"},
+				Source:     "mock-db",
+			},
+			"unannotated-tool": &testutils.MockToolConfig{
+				ConfigBase: tools.ConfigBase{Name: "unannotated-tool"},
+				Source:     "mock-db",
+			},
+		},
+	}
+
+	_, _, _, toolsMap, _, _, _, err := server.InitializeConfigs(ctx, cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// 1. readonly-tool should be present
+	if _, ok := toolsMap["readonly-tool"]; !ok {
+		t.Errorf("readonly-tool should NOT be suppressed")
+	}
+
+	// 2. write-tool should be suppressed
+	if _, ok := toolsMap["write-tool"]; ok {
+		t.Errorf("write-tool should be suppressed")
+	}
+
+	// 3. unannotated-tool should NOT be suppressed (graceful fallback)
+	if _, ok := toolsMap["unannotated-tool"]; !ok {
+		t.Errorf("unannotated-tool should NOT be suppressed")
+	}
+}
+
+func TestInitializeTools_WriteModeNoSuppression(t *testing.T) {
+	ctx, err := testutils.ContextWithNewLogger()
+	if err != nil {
+		t.Fatalf("error setting up logger: %s", err)
+	}
+	instrumentation, err := telemetry.CreateTelemetryInstrumentation("0.0.0")
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
+	ctx = util.WithInstrumentation(ctx, instrumentation)
+
+	cfg := server.ServerConfig{
+		SourceConfigs: server.SourceConfigs{
+			"mock-db": testutils.MockSourceConfig{ReadOnly: false}, // Write mode!
+		},
+		ToolConfigs: server.ToolConfigs{
+			"write-tool": &testutils.MockToolConfig{
+				ConfigBase: tools.ConfigBase{Name: "write-tool"},
+				Source:     "mock-db",
+			},
+		},
+	}
+
+	_, _, _, toolsMap, _, _, _, err := server.InitializeConfigs(ctx, cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// write-tool should be present because the source is NOT read-only
+	if _, ok := toolsMap["write-tool"]; !ok {
+		t.Errorf("write-tool should NOT be suppressed in write mode")
+	}
+}

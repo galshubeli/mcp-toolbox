@@ -24,6 +24,7 @@ import (
 	"github.com/googleapis/mcp-toolbox/internal/tools"
 	"github.com/googleapis/mcp-toolbox/internal/util"
 	"github.com/googleapis/mcp-toolbox/internal/util/parameters"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // MockTool is used to mock tools in tests
@@ -36,6 +37,7 @@ type MockTool struct {
 	requireClientAuthorization bool
 	authRequired               []string
 	ReturnParamsInInvoke       bool
+	Annotations                *tools.ToolAnnotations
 }
 
 var _ tools.Tool = MockTool{}
@@ -115,7 +117,7 @@ func (t MockTool) GetAuthRequired() []string {
 }
 
 func (t MockTool) GetAnnotations() *tools.ToolAnnotations {
-	return nil
+	return t.Annotations
 }
 
 func (t MockTool) GetAuthTokenHeaderName(tools.SourceProvider) (string, error) {
@@ -190,4 +192,49 @@ func NewMockPrompt(name, desc string, args prompts.Arguments) MockPrompt {
 		Args:        args,
 		manifest:    manifest,
 	}
+}
+
+// MockReadOnlySource is a mock source that implements sources.ReadOnlySource.
+type MockReadOnlySource struct {
+	ReadOnly bool
+}
+
+func (m *MockReadOnlySource) Initialize(ctx context.Context) error { return nil }
+func (m *MockReadOnlySource) Cleanup() error                       { return nil }
+func (m *MockReadOnlySource) IsReadOnlyMode() bool                 { return m.ReadOnly }
+func (m *MockReadOnlySource) SourceType() string                   { return "mock-db" }
+func (m *MockReadOnlySource) ToConfig() sources.SourceConfig       { return nil }
+
+var _ sources.ReadOnlySource = (*MockReadOnlySource)(nil)
+
+type MockSourceConfig struct {
+	ReadOnly bool
+}
+
+func (m MockSourceConfig) SourceConfigType() string { return "mock-db" }
+func (m MockSourceConfig) Initialize(ctx context.Context, tracer trace.Tracer) (sources.Source, error) {
+	return &MockReadOnlySource{ReadOnly: m.ReadOnly}, nil
+}
+
+// MockToolConfig is a mock tool configuration for testing.
+type MockToolConfig struct {
+	tools.ConfigBase
+	Source string
+}
+
+func (m *MockToolConfig) ToolConfigType() string {
+	return "mock-tool"
+}
+
+func (m *MockToolConfig) Initialize(ctx context.Context) (tools.Tool, error) {
+	readOnlyHint := m.Name == "readonly-tool"
+	var annotations *tools.ToolAnnotations
+	if m.Name != "unannotated-tool" {
+		annotations = &tools.ToolAnnotations{ReadOnlyHint: &readOnlyHint}
+	}
+	return MockTool{
+		Name:        m.Name,
+		Description: "mock tool",
+		Annotations: annotations,
+	}, nil
 }
