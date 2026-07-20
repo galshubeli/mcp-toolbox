@@ -1358,6 +1358,16 @@ func (c offlineToolConfig) Initialize(context.Context) (tools.Tool, error) {
 	return testutils.NewMockTool(c.name, "offline tool", nil, false, false), nil
 }
 
+type offlinePromptConfig struct {
+	name string
+}
+
+func (c offlinePromptConfig) PromptConfigType() string { return "offline-test-prompt" }
+
+func (c offlinePromptConfig) Initialize() (prompts.Prompt, error) {
+	return testutils.NewMockPrompt(c.name, "offline prompt", nil), nil
+}
+
 func TestInitializeOfflineConfigs(t *testing.T) {
 	ctx, err := testutils.ContextWithNewLogger()
 	if err != nil {
@@ -1483,5 +1493,135 @@ func TestDefaultToolsetIsAlphabeticallySorted(t *testing.T) {
 	expectedOrder := []string{"apple", "banana", "zoo"}
 	if diff := cmp.Diff(expectedOrder, defaultToolset.ToolNames); diff != "" {
 		t.Errorf("default toolset ToolNames mismatch (-want +got):\n%s", diff)
+	}
+
+	if len(cfg.ToolsetConfigs) != 0 {
+		t.Errorf("expected cfg.ToolsetConfigs to remain unmutated (len 0), got len %d", len(cfg.ToolsetConfigs))
+	}
+}
+
+func TestDefaultPromptsetIsAlphabeticallySorted(t *testing.T) {
+	ctx, err := testutils.ContextWithNewLogger()
+	if err != nil {
+		t.Fatalf("error setting up logger: %s", err)
+	}
+	instrumentation, err := telemetry.CreateTelemetryInstrumentation("0.0.0")
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
+	ctx = util.WithInstrumentation(ctx, instrumentation)
+
+	cfg := server.ServerConfig{
+		Version: "0.0.0",
+		PromptConfigs: server.PromptConfigs{
+			"zoo":    offlinePromptConfig{name: "zoo"},
+			"apple":  offlinePromptConfig{name: "apple"},
+			"banana": offlinePromptConfig{name: "banana"},
+		},
+	}
+
+	_, _, _, _, _, _, promptsetsMap, err := server.InitializeConfigs(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Initialize returned error: %s", err)
+	}
+
+	defaultPromptset, ok := promptsetsMap[""]
+	if !ok {
+		t.Fatal("expected default promptset to be present")
+	}
+
+	expectedOrder := []string{"apple", "banana", "zoo"}
+	if diff := cmp.Diff(expectedOrder, defaultPromptset.PromptNames); diff != "" {
+		t.Errorf("default promptset PromptNames mismatch (-want +got):\n%s", diff)
+	}
+
+	if len(cfg.PromptsetConfigs) != 0 {
+		t.Errorf("expected cfg.PromptsetConfigs to remain unmutated (len 0), got len %d", len(cfg.PromptsetConfigs))
+	}
+}
+
+func TestInitializeTools_ReadOnlySuppression(t *testing.T) {
+	ctx, err := testutils.ContextWithNewLogger()
+	if err != nil {
+		t.Fatalf("error setting up logger: %s", err)
+	}
+	instrumentation, err := telemetry.CreateTelemetryInstrumentation("0.0.0")
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
+	ctx = util.WithInstrumentation(ctx, instrumentation)
+
+	cfg := server.ServerConfig{
+		SourceConfigs: server.SourceConfigs{
+			"mock-db": testutils.MockSourceConfig{ReadOnly: true},
+		},
+		ToolConfigs: server.ToolConfigs{
+			"write-tool": &testutils.MockToolConfig{
+				ConfigBase: tools.ConfigBase{Name: "write-tool"},
+				Source:     "mock-db",
+			},
+			"readonly-tool": &testutils.MockToolConfig{
+				ConfigBase: tools.ConfigBase{Name: "readonly-tool"},
+				Source:     "mock-db",
+			},
+			"unannotated-tool": &testutils.MockToolConfig{
+				ConfigBase: tools.ConfigBase{Name: "unannotated-tool"},
+				Source:     "mock-db",
+			},
+		},
+	}
+
+	_, _, _, toolsMap, _, _, _, err := server.InitializeConfigs(ctx, cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// 1. readonly-tool should be present
+	if _, ok := toolsMap["readonly-tool"]; !ok {
+		t.Errorf("readonly-tool should NOT be suppressed")
+	}
+
+	// 2. write-tool should be suppressed
+	if _, ok := toolsMap["write-tool"]; ok {
+		t.Errorf("write-tool should be suppressed")
+	}
+
+	// 3. unannotated-tool should NOT be suppressed (graceful fallback)
+	if _, ok := toolsMap["unannotated-tool"]; !ok {
+		t.Errorf("unannotated-tool should NOT be suppressed")
+	}
+}
+
+func TestInitializeTools_WriteModeNoSuppression(t *testing.T) {
+	ctx, err := testutils.ContextWithNewLogger()
+	if err != nil {
+		t.Fatalf("error setting up logger: %s", err)
+	}
+	instrumentation, err := telemetry.CreateTelemetryInstrumentation("0.0.0")
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
+	ctx = util.WithInstrumentation(ctx, instrumentation)
+
+	cfg := server.ServerConfig{
+		SourceConfigs: server.SourceConfigs{
+			"mock-db": testutils.MockSourceConfig{ReadOnly: false}, // Write mode!
+		},
+		ToolConfigs: server.ToolConfigs{
+			"write-tool": &testutils.MockToolConfig{
+				ConfigBase: tools.ConfigBase{Name: "write-tool"},
+				Source:     "mock-db",
+			},
+		},
+	}
+
+	_, _, _, toolsMap, _, _, _, err := server.InitializeConfigs(ctx, cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// write-tool should be present because the source is NOT read-only
+	if _, ok := toolsMap["write-tool"]; !ok {
+		t.Errorf("write-tool should NOT be suppressed in write mode")
 	}
 }

@@ -24,6 +24,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -183,7 +184,7 @@ func InitializeConfigs(ctx context.Context, cfg ServerConfig) (
 	}
 	l.InfoContext(ctx, fmt.Sprintf("Initialized %d embeddingModels: %s", len(embeddingModelsMap), strings.Join(embeddingModelNames, ", ")))
 
-	toolsMap, err := initializeTools(ctx, cfg, instrumentation, l)
+	toolsMap, err := initializeTools(ctx, cfg, sourcesMap, instrumentation, l)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, nil, err
 	}
@@ -221,46 +222,10 @@ func InitializeConfigs(ctx context.Context, cfg ServerConfig) (
 	}
 	l.InfoContext(ctx, fmt.Sprintf("Initialized %d prompts: %s", len(promptsMap), strings.Join(promptNames, ", ")))
 
-	// create a default promptset that contains all prompts
-	allPromptNames := make([]string, 0, len(promptsMap))
-	for name := range promptsMap {
-		allPromptNames = append(allPromptNames, name)
+	promptsetsMap, err := initializePromptsets(ctx, cfg, promptsMap, instrumentation, l)
+	if err != nil {
+		return nil, nil, nil, nil, nil, nil, nil, err
 	}
-	if cfg.PromptsetConfigs == nil {
-		cfg.PromptsetConfigs = make(PromptsetConfigs)
-	}
-	cfg.PromptsetConfigs[""] = prompts.PromptsetConfig{Name: "", PromptNames: allPromptNames}
-
-	// initialize and validate the promptsets from configs
-	promptsetsMap := make(map[string]prompts.Promptset)
-	for name, pc := range cfg.PromptsetConfigs {
-		p, err := func() (prompts.Promptset, error) {
-			_, span := instrumentation.Tracer.Start(
-				ctx,
-				"toolbox/server/prompset/init",
-				trace.WithAttributes(attribute.String("prompset_name", name)),
-			)
-			defer span.End()
-			p, err := pc.Initialize(cfg.Version, promptsMap)
-			if err != nil {
-				return prompts.Promptset{}, fmt.Errorf("unable to initialize promptset %q: %w", name, err)
-			}
-			return p, err
-		}()
-		if err != nil {
-			return nil, nil, nil, nil, nil, nil, nil, err
-		}
-		promptsetsMap[name] = p
-	}
-	promptsetNames := make([]string, 0, len(promptsetsMap))
-	for name := range promptsetsMap {
-		if name == "" {
-			promptsetNames = append(promptsetNames, "default")
-		} else {
-			promptsetNames = append(promptsetNames, name)
-		}
-	}
-	l.InfoContext(ctx, fmt.Sprintf("Initialized %d promptsets: %s", len(promptsetsMap), strings.Join(promptsetNames, ", ")))
 
 	return sourcesMap, authServicesMap, embeddingModelsMap, toolsMap, toolsetsMap, promptsMap, promptsetsMap, nil
 }
@@ -283,7 +248,7 @@ func InitializeOfflineConfigs(ctx context.Context, cfg ServerConfig) (
 		return nil, nil, fmt.Errorf("failed to get logger from context: %w", err)
 	}
 
-	toolsMap, err := initializeTools(ctx, cfg, instrumentation, l)
+	toolsMap, err := initializeTools(ctx, cfg, nil, instrumentation, l)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -297,7 +262,7 @@ func InitializeOfflineConfigs(ctx context.Context, cfg ServerConfig) (
 }
 
 // initializeTools initializes and validates the tools from the config.
-func initializeTools(ctx context.Context, cfg ServerConfig, instrumentation *telemetry.Instrumentation, l log.Logger) (map[string]tools.Tool, error) {
+func initializeTools(ctx context.Context, cfg ServerConfig, sourcesMap map[string]sources.Source, instrumentation *telemetry.Instrumentation, l log.Logger) (map[string]tools.Tool, error) {
 	toolsMap := make(map[string]tools.Tool)
 	for name, tc := range cfg.ToolConfigs {
 		t, err := func() (tools.Tool, error) {
@@ -317,6 +282,11 @@ func initializeTools(ctx context.Context, cfg ServerConfig, instrumentation *tel
 		if err != nil {
 			return nil, err
 		}
+
+		if shouldSuppressTool(ctx, l, tc, t, name, sourcesMap) {
+			continue
+		}
+
 		toolsMap[name] = t
 	}
 	toolNames := make([]string, 0, len(toolsMap))
@@ -325,6 +295,49 @@ func initializeTools(ctx context.Context, cfg ServerConfig, instrumentation *tel
 	}
 	l.InfoContext(ctx, fmt.Sprintf("Initialized %d tools: %s", len(toolsMap), strings.Join(toolNames, ", ")))
 	return toolsMap, nil
+}
+
+func shouldSuppressTool(ctx context.Context, l log.Logger, tc tools.ToolConfig, t tools.Tool, toolName string, sourcesMap map[string]sources.Source) bool {
+	if sourcesMap == nil {
+		return false
+	}
+
+	v := reflect.Indirect(reflect.ValueOf(tc))
+	if v.Kind() != reflect.Struct {
+		return false
+	}
+
+	sourceField := v.FieldByName("Source")
+	if !sourceField.IsValid() || sourceField.Kind() != reflect.String {
+		return false
+	}
+
+	sourceName := sourceField.String()
+	if sourceName == "" {
+		return false
+	}
+
+	src, ok := sourcesMap[sourceName]
+	if !ok {
+		return false
+	}
+
+	rs, ok := src.(sources.ReadOnlySource)
+	if !ok || !rs.IsReadOnlyMode() {
+		return false
+	}
+
+	annotations := t.GetAnnotations()
+	if annotations != nil && annotations.ReadOnlyHint != nil {
+		if !*annotations.ReadOnlyHint {
+			l.InfoContext(ctx, fmt.Sprintf("Suppressing write-capable tool %q bound to read-only source %q", toolName, sourceName))
+			return true
+		}
+		return false
+	}
+
+	l.WarnContext(ctx, fmt.Sprintf("Tool %q bound to read-only source %q lacks ReadOnlyHint annotation; executing this tool may fail if it attempts write operations. If this tool is meant to be read-only, please add 'readOnlyHint: true' to its annotations. Otherwise, add 'readOnlyHint: false' to suppress it in read-only mode and save agent context window.", toolName, sourceName))
+	return false
 }
 
 // initializeToolsets seeds a default toolset containing all tools, then
@@ -336,25 +349,31 @@ func initializeToolsets(ctx context.Context, cfg ServerConfig, toolsMap map[stri
 		allToolNames = append(allToolNames, name)
 	}
 	slices.Sort(allToolNames)
-	if cfg.ToolsetConfigs == nil {
-		cfg.ToolsetConfigs = make(ToolsetConfigs)
+	toolsetConfigs := make(ToolsetConfigs, len(cfg.ToolsetConfigs)+1)
+	for k, v := range cfg.ToolsetConfigs {
+		toolsetConfigs[k] = v
 	}
-	cfg.ToolsetConfigs[""] = tools.ToolsetConfig{Name: "", ToolNames: allToolNames}
+
+	toolsetConfigs[""] = tools.ToolsetConfig{Name: "", ToolNames: allToolNames}
 
 	toolsetsMap := make(map[string]tools.Toolset)
-	for name, tc := range cfg.ToolsetConfigs {
-		if cfg.IgnoreUnknownTools {
-			filteredToolNames := make([]string, 0, len(tc.ToolNames))
-			for _, tn := range tc.ToolNames {
-				if _, ok := toolsMap[tn]; ok {
-					filteredToolNames = append(filteredToolNames, tn)
-				} else {
-					l.WarnContext(ctx, fmt.Sprintf("Skipping missing tool %q in toolset %q", tn, name))
-				}
+	for name, tc := range toolsetConfigs {
+		filteredToolNames := make([]string, 0, len(tc.ToolNames))
+		for _, tn := range tc.ToolNames {
+			if _, ok := toolsMap[tn]; ok {
+				filteredToolNames = append(filteredToolNames, tn)
+			} else if _, isTool := cfg.ToolConfigs[tn]; isTool {
+				l.InfoContext(ctx, fmt.Sprintf("Removing suppressed tool %q from toolset %q", tn, name))
+			} else if cfg.IgnoreUnknownTools {
+				l.WarnContext(ctx, fmt.Sprintf("Skipping missing tool %q in toolset %q", tn, name))
+			} else {
+				// Keep it so that Initialize returns the expected error
+				filteredToolNames = append(filteredToolNames, tn)
 			}
-			tc.ToolNames = filteredToolNames
-			cfg.ToolsetConfigs[name] = tc
 		}
+
+		tcCopy := tc
+		tcCopy.ToolNames = filteredToolNames
 
 		t, err := func() (tools.Toolset, error) {
 			_, span := instrumentation.Tracer.Start(
@@ -363,7 +382,7 @@ func initializeToolsets(ctx context.Context, cfg ServerConfig, toolsMap map[stri
 				trace.WithAttributes(attribute.String("toolset.name", name)),
 			)
 			defer span.End()
-			t, err := tc.Initialize(cfg.Version, toolsMap)
+			t, err := tcCopy.Initialize(cfg.Version, toolsMap)
 			if err != nil {
 				return tools.Toolset{}, fmt.Errorf("unable to initialize toolset %q: %w", name, err)
 			}
@@ -385,6 +404,55 @@ func initializeToolsets(ctx context.Context, cfg ServerConfig, toolsMap map[stri
 	l.InfoContext(ctx, fmt.Sprintf("Initialized %d toolsets: %s", len(toolsetsMap), strings.Join(toolsetNames, ", ")))
 
 	return toolsetsMap, nil
+}
+
+// initializePromptsets seeds a default promptset containing all prompts, then
+// initializes and validates the promptsets from the config.
+func initializePromptsets(ctx context.Context, cfg ServerConfig, promptsMap map[string]prompts.Prompt, instrumentation *telemetry.Instrumentation, l log.Logger) (map[string]prompts.Promptset, error) {
+	// create a default promptset that contains all prompts
+	allPromptNames := make([]string, 0, len(promptsMap))
+	for name := range promptsMap {
+		allPromptNames = append(allPromptNames, name)
+	}
+	slices.Sort(allPromptNames)
+	promptsetConfigs := make(PromptsetConfigs, len(cfg.PromptsetConfigs)+1)
+	for k, v := range cfg.PromptsetConfigs {
+		promptsetConfigs[k] = v
+	}
+	promptsetConfigs[""] = prompts.PromptsetConfig{Name: "", PromptNames: allPromptNames}
+
+	// initialize and validate the promptsets from configs
+	promptsetsMap := make(map[string]prompts.Promptset)
+	for name, pc := range promptsetConfigs {
+		p, err := func() (prompts.Promptset, error) {
+			_, span := instrumentation.Tracer.Start(
+				ctx,
+				"toolbox/server/prompset/init",
+				trace.WithAttributes(attribute.String("prompset_name", name)),
+			)
+			defer span.End()
+			p, err := pc.Initialize(cfg.Version, promptsMap)
+			if err != nil {
+				return prompts.Promptset{}, fmt.Errorf("unable to initialize promptset %q: %w", name, err)
+			}
+			return p, err
+		}()
+		if err != nil {
+			return nil, err
+		}
+		promptsetsMap[name] = p
+	}
+	promptsetNames := make([]string, 0, len(promptsetsMap))
+	for name := range promptsetsMap {
+		if name == "" {
+			promptsetNames = append(promptsetNames, "default")
+		} else {
+			promptsetNames = append(promptsetNames, name)
+		}
+	}
+	l.InfoContext(ctx, fmt.Sprintf("Initialized %d promptsets: %s", len(promptsetsMap), strings.Join(promptsetNames, ", ")))
+
+	return promptsetsMap, nil
 }
 
 func hostCheck(allowedHosts map[string]struct{}) func(http.Handler) http.Handler {
